@@ -100,4 +100,4 @@ Revenue and statistics count only bookings you have marked **done**, so mark eac
 | Registering says "Email address ... is invalid" | Set `LOGIN_EMAIL_DOMAIN` in `js/config.js` to a real domain you own (e.g. `radiancecarwash.in`). Do this before real customers register, because changing it later changes everyone's hidden login email. |
 | Registering says "email rate limit exceeded" | Confirm email is still on. Turn it off. |
 | Admin console does not appear | Run the SQL in step 4 with the exact mobile number, then log out and in. |
-| Reset password fails | Ask your developer to check the `admin_set_password` function; as a fallback, delete the user in Supabase **Authentication > Users** and let them register again. |
+| Reset password fails | Ask your developer to check the `admin_set_password` function; as a fallback, delete the user in Supabase **Authentication > Users** and let them register again..|
