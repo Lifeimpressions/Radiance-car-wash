@@ -35,6 +35,8 @@
   function msg(x){var m=(x&&x.message)||String(x);
     if(/Invalid login credentials/i.test(m))return 'Mobile number or password is wrong.';
     if(/already registered|already been registered/i.test(m))return 'This mobile number is already registered. Log in instead.';
+    if(/has_login|promo_ok|vehicle_type|profiles_id_fkey|row-level security policy for table "profiles"/i.test(m))return 'One-time database update needed: run update-2-add-customers.sql in Supabase, then try again.';
+    if(/profiles_phone_key|duplicate key/i.test(m))return 'A customer with this mobile number already exists. Search for them in the list below.';
     if(/review_link|done_message/i.test(m))return 'One-time database update needed: run the two-line SQL from the instructions in Supabase, then try again.';
     if(/Failed to fetch|NetworkError|Load failed/i.test(m))return 'No internet connection. Check your network and try again.';
     return m}
@@ -43,7 +45,7 @@
   var ME=null, DB={users:[],bookings:[],coupons:[],monthly:[],slots:{},price:{},car:[],bike:[],
     settings:{banner_text:'',banner_active:false,open_hour:9,close_hour:19,slot_capacity:2,booking_days:7}};
   function isAdmin(){return ME&&ME.role==='admin'}
-  function mapU(r){return {id:r.id,name:r.name,phone:r.phone,reg:r.reg,role:r.role,monthlyReq:r.monthly_req,created:ymd(new Date(r.created_at))}}
+  function mapU(r){return {id:r.id,name:r.name,phone:r.phone,reg:r.reg,role:r.role,monthlyReq:r.monthly_req,hasLogin:r.has_login!==false,vehicleType:r.vehicle_type||'',promoOk:r.promo_ok!==false,created:ymd(new Date(r.created_at))}}
   function mapB(r){return {id:r.id,userId:r.user_id,v:r.vehicle,pack:r.pack,price:r.price,discount:r.discount,coupon:r.coupon,date:r.date,time:r.time,status:r.status,notes:r.notes,cancelledBy:r.cancelled_by,cancelledOn:r.cancelled_on}}
   function mapM(r){return {id:r.id,userId:r.user_id,plan:r.plan,washes:r.washes,used:r.used,amount:+r.amount,start:r.start_date,end:r.end_date}}
   async function pages(make){var out=[],from=0,r;for(;;){r=ok(await make().range(from,from+999));out=out.concat(r);if(r.length<1000)break;from+=1000}return out}
@@ -103,7 +105,7 @@
   function viewAuth(){
     var f=U.auth==='login'
       ?'<form class="fields" data-form="login"><div class="field"><label for="l-phone">Mobile number</label><input type="tel" id="l-phone" inputmode="numeric" autocomplete="tel" placeholder="10-digit mobile" required></div><div class="field"><label for="l-pass">Password</label><input type="password" id="l-pass" autocomplete="current-password" required></div>'+ERR+'<button class="btn gold wide">Log in</button><p class="small muted">Forgot your password? Call the shop on 7449250989 and we will reset it.</p></form>'
-      :'<form class="fields" data-form="register"><div class="field"><label for="r-name">Name</label><input type="text" id="r-name" autocomplete="name" required></div><div class="field"><label for="r-phone">Mobile number</label><input type="tel" id="r-phone" inputmode="numeric" autocomplete="tel" placeholder="10-digit mobile" required></div><div class="field"><label for="r-reg">Vehicle number <span>(optional)</span></label><input type="text" id="r-reg" autocapitalize="characters" placeholder="TN 11 AB 1234"></div><div class="field"><label for="r-pass">Create a password</label><input type="password" id="r-pass" autocomplete="new-password" placeholder="At least 6 characters" required></div>'+ERR+'<button class="btn gold wide">Create account</button></form>';
+      :'<form class="fields" data-form="register"><div class="field"><label for="r-name">Name</label><input type="text" id="r-name" autocomplete="name" required></div><div class="field"><label for="r-phone">Mobile number</label><input type="tel" id="r-phone" inputmode="numeric" autocomplete="tel" placeholder="10-digit mobile" required></div><div class="field"><label for="r-reg">Vehicle number <span>(optional)</span></label><input type="text" id="r-reg" autocapitalize="characters" placeholder="TN 11 AB 1234"></div><div class="field"><label for="r-pass">Create a password</label><input type="password" id="r-pass" autocomplete="new-password" placeholder="At least 6 characters" required></div><label class="check"><input type="checkbox" id="r-promo" checked> Send me offers and wash reminders on WhatsApp</label>'+ERR+'<button class="btn gold wide">Create account</button></form>';
     return banner()+'<div class="narrow stack" style="margin-top:24px"><div class="seg" role="tablist">'+seg('auth',U.auth,[['login','Log in'],['register','Register']])+'</div><section class="panel stack">'+notices()+f+'</section>'+
       '<section class="panel"><p>Ruby Vairam, Paduvanchery Main Rd, Shantha Nagar, Madambakkam, Tambaram, Tamil Nadu 600126</p><p class="price" style="margin-top:8px;user-select:all">7449250989 &nbsp; 8056032929</p></section></div>';
   }
@@ -141,7 +143,7 @@
   }
   function custAccount(){
     var pkg=activePkg(ME.id);
-    return '<section class="panel"><h3 class="h">Your details</h3><form class="fields" data-form="profile" style="clear:both"><div class="field"><label for="p-name">Name</label><input type="text" id="p-name" value="'+h(ME.name)+'" required></div><div class="field"><label for="p-phone">Mobile number</label><input type="tel" id="p-phone" value="'+h(ME.phone)+'" disabled></div><div class="field"><label for="p-reg">Vehicle number</label><input type="text" id="p-reg" autocapitalize="characters" value="'+h(ME.reg||'')+'"></div>'+ERR+'<button class="btn gold">Save details</button></form></section>'+
+    return '<section class="panel"><h3 class="h">Your details</h3><form class="fields" data-form="profile" style="clear:both"><div class="field"><label for="p-name">Name</label><input type="text" id="p-name" value="'+h(ME.name)+'" required></div><div class="field"><label for="p-phone">Mobile number</label><input type="tel" id="p-phone" value="'+h(ME.phone)+'" disabled></div><div class="field"><label for="p-reg">Vehicle number</label><input type="text" id="p-reg" autocapitalize="characters" value="'+h(ME.reg||'')+'"></div><label class="check"><input type="checkbox" id="p-promo"'+(ME.promoOk?' checked':'')+'> Send me offers and wash reminders on WhatsApp</label>'+ERR+'<button class="btn gold">Save details</button></form></section>'+
       '<section class="panel"><h3 class="h">Change password</h3><form class="fields" data-form="mypass" style="clear:both"><div class="field"><label for="np">New password</label><input type="password" id="np" autocomplete="new-password" placeholder="At least 6 characters" required></div>'+ERR+'<button class="btn">Update password</button></form></section>'+
       '<section class="panel stack"><h3 class="h" style="margin:0">Monthly package</h3>'+(pkg?'<p><b>'+h(pkg.plan)+'</b><br>'+(pkg.washes-pkg.used)+' of '+pkg.washes+' washes left. Valid till '+fmtDate(pkg.end,true)+'.</p>':ME.monthlyReq?'<p class="good">Request sent. The shop will contact you with package details.</p>':'<p>Regular customer? Monthly packages are available with a special discount.</p><div><button type="button" class="btn" data-act="reqmonthly">Request monthly package</button></div>')+'</section>';
   }
@@ -199,16 +201,17 @@
   function customers(){return DB.users.filter(function(u){return u.role!=='admin'})}
   function promoGroup(){
     var cut=ymd(addDays(today(),-30));
-    if(U.group==='monthly')return customers().filter(function(u){return activePkg(u.id)});
-    if(U.group==='inactive')return customers().filter(function(u){return !DB.bookings.some(function(b){return b.userId===u.id&&b.status!=='cancelled'&&b.date>=cut})});
-    return customers();
+    var ok=customers().filter(function(u){return u.promoOk});
+    if(U.group==='monthly')return ok.filter(function(u){return activePkg(u.id)});
+    if(U.group==='inactive')return ok.filter(function(u){return !DB.bookings.some(function(b){return b.userId===u.id&&b.status!=='cancelled'&&b.date>=cut})});
+    return ok;
   }
   function recips(list,text,extra){
     if(!list.length)return '<p class="muted">No customers in this group right now.</p>';
     return list.map(function(u){return '<div class="item"><div class="main"><b>'+h(u.name)+'</b><span class="small muted">'+h(u.phone)+(extra?' &middot; '+extra(u):'')+'</span></div><a class="btn sm" target="_blank" rel="noopener" href="'+wa(u.phone,text.replace(/\{name\}/g,first(u.name)))+'">Open WhatsApp</a></div>'}).join('');
   }
   function lastWash(u){var d='';DB.bookings.forEach(function(b){if(b.userId===u.id&&b.status==='completed'&&b.date>d)d=b.date});return d}
-  function dueList(){var t=ymd(today());return customers().filter(function(u){var d=lastWash(u);return d&&daysSince(d)>=U.remind&&!DB.bookings.some(function(b){return b.userId===u.id&&b.status==='booked'&&b.date>=t})})}
+  function dueList(){var t=ymd(today());return customers().filter(function(u){var d=lastWash(u);return u.promoOk&&d&&daysSince(d)>=U.remind&&!DB.bookings.some(function(b){return b.userId===u.id&&b.status==='booked'&&b.date>=t})})}
   function dueHtml(){return recips(dueList(),U.remindText,function(u){return 'last wash '+daysSince(lastWash(u))+' days ago'})}
   function admMarketing(){
     var S=DB.settings;
@@ -216,17 +219,26 @@
       '<section class="panel"><h3 class="h">Offer banner in customer app</h3><form class="fields" data-form="banner" style="clear:both"><div class="field"><label for="bn-text">Banner text</label><textarea id="bn-text" placeholder="Festival offer: 10% off all washes this week">'+h(S.banner_text)+'</textarea></div><label class="check"><input type="checkbox" id="bn-on"'+(S.banner_active?' checked':'')+'> Show the banner to customers</label>'+ERR+'<div><button class="btn gold">Save banner</button></div></form></section>'+
       '<section class="panel"><h3 class="h">Offers and coupon codes</h3><div style="clear:both">'+(DB.coupons.length?DB.coupons.map(function(c){return '<div class="item"><div class="main"><b>'+h(c.code)+'</b><span class="small muted">'+(c.type==='pct'?(+c.value)+'% off':rupee(c.value)+' off')+(c.expires?' &middot; till '+fmtDate(c.expires):' &middot; no expiry')+'</span></div><div class="row">'+(couponOk(c)?'<span class="pill completed">Active</span>':'<span class="pill cancelled">'+(c.active?'Expired':'Off')+'</span>')+'<button type="button" class="btn sm" data-act="togglecoupon" data-id="'+h(c.code)+'">'+(c.active?'Turn off':'Turn on')+'</button></div></div>'}).join(''):'<p class="muted">No coupons yet. Create the first one below.</p>')+'</div>'+
         '<form class="fields" data-form="coupon" style="margin-top:16px"><div class="fields two"><div class="field"><label for="c-code">New code</label><input type="text" id="c-code" autocapitalize="characters" placeholder="DIWALI20" required></div><div class="field"><label for="c-type">Discount type</label><select id="c-type"><option value="pct">Percent off</option><option value="flat">Rupees off</option></select></div><div class="field"><label for="c-value">Value</label><input type="number" id="c-value" min="1" required></div><div class="field"><label for="c-exp">Expires <span>(optional)</span></label><input type="date" id="c-exp"></div></div>'+ERR+'<div><button class="btn gold">Create coupon</button></div></form></section>'+
-      '<section class="panel stack"><h3 class="h" style="margin:0">WhatsApp promo message</h3><div class="field"><label for="group">Send to</label><select id="group">'+[['all','All customers'],['inactive','No visit in the last 30 days'],['monthly','Monthly package holders']].map(function(o){return '<option value="'+o[0]+'"'+(U.group===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div><div class="field"><label for="promo">Message <span>({name} becomes the customer’s first name)</span></label><textarea id="promo">'+h(U.promo)+'</textarea></div><p class="small muted">Each button opens WhatsApp with the message typed for that customer. You press send.</p><div id="recips">'+recips(promoGroup(),U.promo)+'</div></section>'+
+      '<section class="panel stack"><h3 class="h" style="margin:0">WhatsApp promo message</h3><div class="field"><label for="group">Send to</label><select id="group">'+[['all','All customers'],['inactive','No visit in the last 30 days'],['monthly','Monthly package holders']].map(function(o){return '<option value="'+o[0]+'"'+(U.group===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div><div class="field"><label for="promo">Message <span>({name} becomes the customer’s first name)</span></label><textarea id="promo">'+h(U.promo)+'</textarea></div><p class="small muted">Customers who turned off offers are left out. Each button opens WhatsApp with the message typed for that customer. You press send.</p><div id="recips">'+recips(promoGroup(),U.promo)+'</div></section>'+
       '<section class="panel stack"><h3 class="h" style="margin:0">Service reminders</h3><div class="field"><label for="remind">Remind customers whose last wash was at least</label><select id="remind">'+[7,15,30,45].map(function(n){return '<option value="'+n+'"'+(U.remind===n?' selected':'')+'>'+n+' days ago</option>'}).join('')+'</select></div><div class="field"><label for="remindtext">Reminder message</label><textarea id="remindtext">'+h(U.remindText)+'</textarea></div><p class="small muted">Customers who already have an upcoming booking are left out.</p><div id="due">'+dueHtml()+'</div></section></div>';
   }
   function custRows(){
     var q=U.cq.trim().toLowerCase(),list=customers().filter(function(u){return !q||u.name.toLowerCase().indexOf(q)>=0||u.phone.indexOf(q)>=0||(u.reg||'').toLowerCase().indexOf(q)>=0});
     if(!list.length)return '<p class="muted">'+(q?'No customers match.':'No customers have registered yet.')+'</p>';
     return list.map(function(u){var n=DB.bookings.filter(function(b){return b.userId===u.id&&b.status==='completed'}).length,lw=lastWash(u);
-      return '<div class="item"><div class="main"><b>'+h(u.name)+' &middot; '+h(u.phone)+'</b><span class="small muted">'+(u.reg?h(u.reg)+' &middot; ':'')+'joined '+fmtDate(u.created)+' &middot; '+n+' washes'+(lw?' &middot; last on '+fmtDate(lw):'')+'</span></div>'+
-        (U.reset===u.id?'<form class="row" data-form="resetpw" data-id="'+u.id+'"><input type="text" id="rp-new" placeholder="New password (6+)" style="width:190px" required><button class="btn sm gold">Set</button><button type="button" class="btn sm" data-act="noreset">Close</button>'+ERR+'</form>':'<button type="button" class="btn sm" data-act="askreset" data-id="'+u.id+'">Reset password</button>')+'</div>'}).join('');
+      return '<div class="item"><div class="main"><b>'+h(u.name)+' &middot; '+h(u.phone)+'</b><span class="small muted">'+(u.vehicleType?(u.vehicleType==='bike'?'Bike':'Car')+' &middot; ':'')+(u.reg?h(u.reg)+' &middot; ':'')+(u.hasLogin?'':'added by shop, no app login &middot; ')+(activePkg(u.id)?'monthly package &middot; ':'')+(u.promoOk?'':'no offers &middot; ')+'joined '+fmtDate(u.created)+' &middot; '+n+' washes'+(lw?' &middot; last on '+fmtDate(lw):'')+'</span></div>'+
+        (U.reset===u.id?'<form class="row" data-form="resetpw" data-id="'+u.id+'"><input type="text" id="rp-new" placeholder="New password (6+)" style="width:190px" required><button class="btn sm gold">Set</button><button type="button" class="btn sm" data-act="noreset">Close</button>'+ERR+'</form>':'<div class="row"><button type="button" class="btn sm" data-act="togglepromo" data-id="'+u.id+'">'+(u.promoOk?'Stop offers':'Allow offers')+'</button>'+(u.hasLogin?'<button type="button" class="btn sm" data-act="askreset" data-id="'+u.id+'">Reset password</button>':'')+'</div>')+'</div>'}).join('');
   }
-  function admCustomers(){return '<section class="panel stack"><div class="field"><label for="cq">Search customer</label><input type="search" id="cq" value="'+h(U.cq)+'" placeholder="Name, mobile or vehicle number"></div><div id="custrows">'+custRows()+'</div></section>'}
+  function addCustForm(){var t=ymd(today());
+    return '<section class="panel"><h3 class="h">Add a customer</h3><form class="fields" data-form="addcust" style="clear:both">'+
+      '<div class="fields two"><div class="field"><label for="nc-name">Name</label><input type="text" id="nc-name" autocomplete="off" required></div><div class="field"><label for="nc-phone">Mobile number</label><input type="tel" id="nc-phone" inputmode="numeric" autocomplete="off" placeholder="10-digit mobile" required></div></div>'+
+      '<div class="fields two"><div class="field"><span class="sub" style="margin:0">Vehicle type</span><div class="opts" style="grid-template-columns:1fr 1fr">'+radio('nc-vtype','car',true,'<b>Car</b>')+radio('nc-vtype','bike',false,'<b>Bike</b>')+'</div></div><div class="field"><label for="nc-reg">Vehicle number</label><input type="text" id="nc-reg" autocapitalize="characters" placeholder="TN 11 AB 1234"></div></div>'+
+      '<div class="field"><span class="sub" style="margin:0">Monthly subscription</span><div class="opts" style="grid-template-columns:1fr 1fr">'+radio('nc-monthly','no',true,'<b>No</b>')+radio('nc-monthly','yes',false,'<b>Yes</b>')+'</div></div>'+
+      '<div class="fields three" id="nc-plan" hidden><div class="field"><label for="nc-washes">Washes included</label><input type="number" id="nc-washes" min="1" value="4"></div><div class="field"><label for="nc-amount">Amount paid (\u20B9)</label><input type="number" id="nc-amount" min="0"></div><div class="field"><label for="nc-start">Start date</label><input type="date" id="nc-start" value="'+t+'"></div></div>'+
+      '<label class="check"><input type="checkbox" id="nc-promo" checked> Customer agrees to receive offers and reminders on WhatsApp</label>'+
+      '<p class="small muted">The customer does not need the app. If they register later with this mobile number, their bookings and package carry over.</p>'+ERR+'<div><button class="btn gold">Add customer</button></div></form></section>';
+  }
+  function admCustomers(){return addCustForm()+'<section class="panel stack"><div class="field"><label for="cq">Search customer</label><input type="search" id="cq" value="'+h(U.cq)+'" placeholder="Name, mobile or vehicle number"></div><div id="custrows">'+custRows()+'</div></section>'}
   function admSettings(){
     var S=DB.settings;function hours(id,cur){var o='',t;for(t=5;t<=23;t++)o+='<option value="'+t+'"'+(cur===t?' selected':'')+'>'+fmtTime(t)+'</option>';return '<select id="'+id+'">'+o+'</select>'}
     return '<section class="panel"><h3 class="h">Booking settings</h3><form class="fields" data-form="settings" style="clear:both"><div class="fields two"><div class="field"><label for="s-open">First arrival slot</label>'+hours('s-open',S.open_hour)+'</div><div class="field"><label for="s-close">Last arrival slot</label>'+hours('s-close',S.close_hour)+'</div><div class="field"><label for="s-cap">Vehicles per time slot</label><input type="number" id="s-cap" min="1" max="50" value="'+S.slot_capacity+'" required></div><div class="field"><label for="s-days">Days customers can book ahead</label><input type="number" id="s-days" min="1" max="60" value="'+S.booking_days+'" required></div></div>'+ERR+'<div><button class="btn gold">Save settings</button></div></form></section>'+
@@ -271,6 +283,7 @@
     usewash:async function(id){var m=DB.monthly.filter(function(x){return x.id===id})[0];if(!m||m.used>=m.washes)return;ok(await sb.from('monthly_packages').update({used:m.used+1}).eq('id',id));await reload()},
     togglecoupon:async function(code){var c=DB.coupons.filter(function(x){return x.code===code})[0];if(!c)return;ok(await sb.from('coupons').update({active:!c.active}).eq('code',code));await reload()},
     askreset:function(id){U.reset=id},
+    togglepromo:async function(id){var u=user(id);ok(await sb.from('profiles').update({promo_ok:!u.promoOk}).eq('id',id));await reload();U.msg=u.name+(u.promoOk?' will no longer get offers.':' will now get offers.')},
     noreset:function(){U.reset=null}
   };
   var FORMS={
@@ -282,12 +295,12 @@
       if(n.length<2)throw new Error('Enter your name.');
       if(!/^[6-9]\d{9}$/.test(p))throw new Error('Enter a valid 10-digit mobile number.');
       if(pw.length<6)throw new Error('Password needs at least 6 characters.');
-      var d=ok(await sb.auth.signUp({email:emailFor(p),password:pw,options:{data:{name:n,phone:p,reg:val('r-reg').toUpperCase()}}}));
+      var d=ok(await sb.auth.signUp({email:emailFor(p),password:pw,options:{data:{name:n,phone:p,reg:val('r-reg').toUpperCase(),promo:document.getElementById('r-promo').checked}}}));
       if(d.user&&d.user.identities&&d.user.identities.length===0)throw new Error('This mobile number is already registered. Log in instead.');
       if(!d.session)throw new Error('Registration is not switched on fully yet. Shop owner: turn off "Confirm email" in Supabase (see README).');
       await enter(d.session);go({cTab:'book'},true)},
     profile:async function(){var n=val('p-name');if(n.length<2)throw new Error('Enter your name.');
-      ok(await sb.from('profiles').update({name:n,reg:val('p-reg').toUpperCase()}).eq('id',ME.id));await reload();go({msg:'Details saved.'},true);U.msg='Details saved.';render()},
+      ok(await sb.from('profiles').update({name:n,reg:val('p-reg').toUpperCase(),promo_ok:document.getElementById('p-promo').checked}).eq('id',ME.id));await reload();go({msg:'Details saved.'},true);U.msg='Details saved.';render()},
     mypass:async function(){var pw=document.getElementById('np').value;if(pw.length<6)throw new Error('Password needs at least 6 characters.');
       ok(await sb.auth.updateUser({password:pw}));go({},true);U.msg='Password updated.';render()},
     addpkg:async function(){var w=parseInt(val('m-washes'),10),a=parseFloat(val('m-amount')),s=val('m-start')||ymd(today()),uid=val('m-user');
@@ -309,6 +322,15 @@
       if(link&&!/^https?:\/\/\S+$/i.test(link))throw new Error('The review link must start with https://');
       if(m.length<10)throw new Error('Enter the message to send.');
       ok(await sb.from('settings').update({review_link:link,done_message:m}).eq('id',1));await reload();go({},true);U.msg='Message saved.';render()},
+    addcust:async function(){var n=val('nc-name'),p=cleanPhone(val('nc-phone')),vt=(document.querySelector('input[name=nc-vtype]:checked')||{}).value||'car',mon=(document.querySelector('input[name=nc-monthly]:checked')||{}).value==='yes';
+      if(n.length<2)throw new Error('Enter the customer\u2019s name.');
+      if(!/^[6-9]\d{9}$/.test(p))throw new Error('Enter a valid 10-digit mobile number.');
+      if(DB.users.some(function(u){return u.phone===p}))throw new Error('A customer with this mobile number already exists. Search for them in the list below.');
+      var w=parseInt(val('nc-washes'),10),a=parseFloat(val('nc-amount')),st=val('nc-start')||ymd(today());
+      if(mon&&(!(w>0)||!(a>=0)))throw new Error('Enter the washes included and the amount paid for the monthly subscription.');
+      var row=ok(await sb.from('profiles').insert({name:n,phone:p,reg:val('nc-reg').toUpperCase(),vehicle_type:vt,promo_ok:document.getElementById('nc-promo').checked,has_login:false}).select().single());
+      if(mon)ok(await sb.from('monthly_packages').insert({user_id:row.id,plan:w+' washes',washes:w,amount:a,start_date:st,end_date:ymd(addDays(parse(st),30))}));
+      await reload();go({},true);U.msg=n+' added'+(mon?' with a monthly subscription.':'.');render()},
     resetpw:async function(form){var pw=val('rp-new');if(pw.length<6)throw new Error('Password needs at least 6 characters.');
       var u=user(form.getAttribute('data-id'));ok(await sb.rpc('admin_set_password',{p_user:form.getAttribute('data-id'),p_password:pw}));
       go({},false);U.msg='New password set for '+u.name+'. Tell them the new password.';render()}
@@ -327,6 +349,8 @@
     U.busy=false;
   });
   app.addEventListener('change',function(e){var t=e.target,f=U.form;
+    if(t.name==='nc-monthly'){var pl=document.getElementById('nc-plan');if(pl)pl.hidden=t.value!=='yes';return}
+    if(t.name==='nc-vtype')return;
     if(t.name==='v'){f.v=t.value}else if(t.name==='pack'){f.pack=t.value}else if(t.name==='day'){f.day=+t.value}else if(t.name==='time'){f.time=+t.value}
     else if(t.id==='status'){U.status=t.value}else if(t.id==='group'){U.group=t.value}else if(t.id==='remind'){U.remind=+t.value}else return;
     U.err='';render()});
