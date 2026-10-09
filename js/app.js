@@ -25,11 +25,17 @@
   function emailFor(phone){return phone+'@'+DOMAIN}
   function wa(phone,text){return 'https://wa.me/91'+phone+'?text='+encodeURIComponent(text)}
   function first(name){return String(name).split(' ')[0]}
+  var DONE_MSG='Hi {name}, your {package} at Radiance Car Wash is done and your vehicle is ready. Thank you for choosing us! If you are happy with the service, please leave us a quick review: {link}';
+  function doneText(b){var S=DB.settings,t=S.done_message||DONE_MSG,link=(S.review_link||'').trim(),u=user(b.userId);
+    if(!link)t=t.replace(/[^.!?]*\{link\}[^.!?]*[.!?]?/,'').trim();
+    return t.replace(/\{name\}/g,first(u.name)).replace(/\{package\}/g,packName(b.pack)).replace(/\{link\}/g,link)}
+  function doneLink(b,label,cls){var u=user(b.userId);return u.phone?'<a class="btn sm '+(cls||'')+'" target="_blank" rel="noopener" href="'+wa(u.phone,doneText(b))+'">'+label+'</a>':''}
   function val(id){var el=document.getElementById(id);return el?el.value.trim():''}
   function ok(res){if(res.error)throw res.error;return res.data}
   function msg(x){var m=(x&&x.message)||String(x);
     if(/Invalid login credentials/i.test(m))return 'Mobile number or password is wrong.';
     if(/already registered|already been registered/i.test(m))return 'This mobile number is already registered. Log in instead.';
+    if(/review_link|done_message/i.test(m))return 'One-time database update needed: run the two-line SQL from the instructions in Supabase, then try again.';
     if(/Failed to fetch|NetworkError|Load failed/i.test(m))return 'No internet connection. Check your network and try again.';
     return m}
 
@@ -85,7 +91,9 @@
   function pill(s){return '<span class="pill '+s+'">'+s+'</span>'}
   function banner(){return '<header class="hero"><h1><img class="banner" alt="Radiance 360 Car Wash. The Ultimate Glow Up" width="1024" height="314" src="assets/banner.jpg"></h1></header><div class="hazard"></div>'}
   function topbar(name){return '<div class="top"><img class="logo" alt="Radiance 360 Car Wash" src="assets/logo.jpg"><div class="row" style="flex-wrap:nowrap;min-width:0"><div class="who">'+h(name)+'</div><button type="button" class="btn sm" data-act="refresh">Refresh</button><button type="button" class="btn sm" data-act="logout">Log out</button></div></div><div class="hazard"></div>'}
-  function notices(){return (U.err?'<p class="err" role="alert">'+h(U.err)+'</p>':'')+(U.msg?'<div class="note" role="status">'+h(U.msg)+'</div>':'')}
+  function notices(){return (U.err?'<p class="err" role="alert">'+h(U.err)+'</p>':'')+(U.msg?'<div class="note" role="status">'+h(U.msg)+'</div>':'')+sentNote()}
+  function sentNote(){var b=U.sent&&DB.bookings.filter(function(x){return x.id===U.sent})[0];if(!b)return '';var u=user(b.userId);
+    return '<div class="note" role="status"><div class="row between"><div><b>Marked as done.</b> Send '+h(first(u.name))+' the update'+((DB.settings.review_link||'').trim()?' with your review link.':'.')+'</div>'+doneLink(b,'Send on WhatsApp','gold')+'</div>'+((DB.settings.review_link||'').trim()?'':'<p class="small muted" style="margin-top:8px">No review link saved yet. Add it under Settings to include it in this message.</p>')+'</div>'}
   function cancelBtns(b){return U.confirm===b.id?'<span class="small">Cancel this booking?</span><button type="button" class="btn sm danger" data-act="docancel" data-id="'+b.id+'">Yes, cancel</button><button type="button" class="btn sm" data-act="keep">Keep</button>':'<button type="button" class="btn sm" data-act="askcancel" data-id="'+b.id+'">Cancel</button>'}
   function bars(rows,fmt){var max=Math.max.apply(null,rows.map(function(r){return r[1]}).concat([1]));return '<div class="bars">'+rows.map(function(r){return '<div class="bar"><span>'+h(r[0])+'</span><span class="track"><span class="fill" style="display:block;width:'+(r[1]/max*100)+'%"></span></span><span class="n">'+(fmt?fmt(r[1]):r[1])+'</span></div>'}).join('')+'</div>'}
   function byDateAsc(a,b){return a.date<b.date?-1:a.date>b.date?1:a.time-b.time}
@@ -154,7 +162,7 @@
   function allRows(){
     var q=U.q.trim().toLowerCase(),rows=DB.bookings.filter(function(b){var u=user(b.userId);return (U.status==='all'||b.status===U.status)&&(!q||u.name.toLowerCase().indexOf(q)>=0||u.phone.indexOf(q)>=0||(u.reg||'').toLowerCase().indexOf(q)>=0)}).sort(byDateDesc);
     if(!rows.length)return '<tr><td colspan="7" class="muted">No bookings match.</td></tr>';
-    return rows.map(function(b){var u=user(b.userId);return '<tr><td>'+fmtDate(b.date)+'</td><td>'+fmtTime(b.time)+'</td><td>'+h(u.name)+'</td><td>'+h(u.phone)+'</td><td>'+h(sizeName(b.v))+' &middot; '+h(packName(b.pack))+'</td><td class="r">'+rupee(b.price)+'</td><td>'+pill(b.status)+'</td></tr>'}).join('');
+    return rows.map(function(b){var u=user(b.userId);return '<tr><td>'+fmtDate(b.date)+'</td><td>'+fmtTime(b.time)+'</td><td>'+h(u.name)+'</td><td>'+h(u.phone)+'</td><td>'+h(sizeName(b.v))+' &middot; '+h(packName(b.pack))+'</td><td class="r">'+rupee(b.price)+'</td><td>'+pill(b.status)+(b.status==='completed'?' '+doneLink(b,'Send review message'):'')+'</td></tr>'}).join('');
   }
   function admAll(){
     return '<section class="panel stack"><div class="fields two"><div class="field"><label for="q">Search customer</label><input type="search" id="q" value="'+h(U.q)+'" placeholder="Name, mobile or vehicle number"></div><div class="field"><label for="status">Status</label><select id="status">'+[['all','All bookings'],['booked','Booked'],['completed','Completed'],['cancelled','Cancelled']].map(function(o){return '<option value="'+o[0]+'"'+(U.status===o[0]?' selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></div></div><p class="small muted">Shows bookings from the last 400 days.</p>'+
@@ -222,12 +230,13 @@
   function admSettings(){
     var S=DB.settings;function hours(id,cur){var o='',t;for(t=5;t<=23;t++)o+='<option value="'+t+'"'+(cur===t?' selected':'')+'>'+fmtTime(t)+'</option>';return '<select id="'+id+'">'+o+'</select>'}
     return '<section class="panel"><h3 class="h">Booking settings</h3><form class="fields" data-form="settings" style="clear:both"><div class="fields two"><div class="field"><label for="s-open">First arrival slot</label>'+hours('s-open',S.open_hour)+'</div><div class="field"><label for="s-close">Last arrival slot</label>'+hours('s-close',S.close_hour)+'</div><div class="field"><label for="s-cap">Vehicles per time slot</label><input type="number" id="s-cap" min="1" max="50" value="'+S.slot_capacity+'" required></div><div class="field"><label for="s-days">Days customers can book ahead</label><input type="number" id="s-days" min="1" max="60" value="'+S.booking_days+'" required></div></div>'+ERR+'<div><button class="btn gold">Save settings</button></div></form></section>'+
+      '<section class="panel"><h3 class="h">Message after a wash is done</h3><form class="fields" data-form="review" style="clear:both"><div class="field"><label for="s-review">Review link <span>(your Google review link)</span></label><input type="text" id="s-review" inputmode="url" autocapitalize="none" placeholder="https://g.page/r/.../review" value="'+h(S.review_link||'')+'"></div><div class="field"><label for="s-donemsg">Message <span>({name}, {package} and {link} are filled in for each customer)</span></label><textarea id="s-donemsg" style="min-height:130px">'+h(S.done_message||DONE_MSG)+'</textarea></div><p class="small muted">After you tap Mark done, a Send on WhatsApp button appears with this message typed for that customer. You press send.</p>'+ERR+'<div><button class="btn gold">Save message</button></div></form></section>'+
       '<section class="panel"><h3 class="h">Prices</h3><p style="clear:both" class="muted">To change prices or add a package, edit the <b>prices</b> table in your Supabase dashboard (Table Editor). The app picks up the change on the next refresh.</p></section>';
   }
 
   /* ---------- render and events ---------- */
   function render(top){app.innerHTML=!ME?viewAuth():isAdmin()?viewAdmin():viewCustomer();if(top)window.scrollTo(0,0)}
-  function go(patch,top){U.err='';U.msg='';U.confirm=null;U.reset=null;for(var k in patch)U[k]=patch[k];render(top)}
+  function go(patch,top){U.err='';U.msg='';U.confirm=null;U.reset=null;U.sent=null;for(var k in patch)U[k]=patch[k];render(top)}
   async function enter(session){
     var p=ok(await sb.from('profiles').select('*').eq('id',session.user.id).maybeSingle());
     if(!p)throw new Error('Your account has no profile yet. Please contact the shop.');
@@ -257,7 +266,7 @@
       if(isAdmin())ok(await sb.from('bookings').update({status:'cancelled',cancelled_by:'admin',cancelled_on:ymd(today())}).eq('id',id));
       else ok(await sb.rpc('cancel_booking',{p_id:id}));
       U.confirm=null;await reload();U.msg='Booking cancelled.'},
-    complete:async function(id){ok(await sb.from('bookings').update({status:'completed'}).eq('id',id));await reload();U.msg='Marked as done.'},
+    complete:async function(id){ok(await sb.from('bookings').update({status:'completed'}).eq('id',id));await reload();U.sent=id},
     reqmonthly:async function(){ok(await sb.from('profiles').update({monthly_req:true}).eq('id',ME.id));await reload()},
     usewash:async function(id){var m=DB.monthly.filter(function(x){return x.id===id})[0];if(!m||m.used>=m.washes)return;ok(await sb.from('monthly_packages').update({used:m.used+1}).eq('id',id));await reload()},
     togglecoupon:async function(code){var c=DB.coupons.filter(function(x){return x.code===code})[0];if(!c)return;ok(await sb.from('coupons').update({active:!c.active}).eq('code',code));await reload()},
@@ -296,13 +305,17 @@
       if(c<o)throw new Error('The last slot must be after the first slot.');
       if(!(cap>0)||!(days>0&&days<=60))throw new Error('Enter valid numbers for slot capacity and booking days.');
       ok(await sb.from('settings').update({open_hour:o,close_hour:c,slot_capacity:cap,booking_days:days}).eq('id',1));await reload();go({},true);U.msg='Settings saved.';render()},
+    review:async function(){var link=val('s-review'),m=val('s-donemsg');
+      if(link&&!/^https?:\/\/\S+$/i.test(link))throw new Error('The review link must start with https://');
+      if(m.length<10)throw new Error('Enter the message to send.');
+      ok(await sb.from('settings').update({review_link:link,done_message:m}).eq('id',1));await reload();go({},true);U.msg='Message saved.';render()},
     resetpw:async function(form){var pw=val('rp-new');if(pw.length<6)throw new Error('Password needs at least 6 characters.');
       var u=user(form.getAttribute('data-id'));ok(await sb.rpc('admin_set_password',{p_user:form.getAttribute('data-id'),p_password:pw}));
       go({},false);U.msg='New password set for '+u.name+'. Tell them the new password.';render()}
   };
   app.addEventListener('click',async function(e){
     var b=e.target.closest('[data-act]'),a=b&&b.getAttribute('data-act');if(!a||!ACT[a]||U.busy)return;
-    U.busy=true;U.err='';if(a!=='askcancel'&&a!=='keep'&&a!=='askreset'&&a!=='noreset')U.msg='';
+    U.busy=true;U.err='';if(a!=='askcancel'&&a!=='keep'&&a!=='askreset'&&a!=='noreset'){U.msg='';U.sent=null}
     try{await ACT[a](b.getAttribute('data-id'))}catch(x){U.err=msg(x)}
     U.busy=false;render();
   });
